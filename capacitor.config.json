@@ -1,0 +1,6 @@
+{
+  "appId": "com.voxmaker.ai",
+  "appName": "VOXMAKER AI",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
