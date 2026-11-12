@@ -12,13 +12,13 @@ An Android-first, installable music studio built around preserving the singer's 
 - Playback and download of the original recorded audio
 - WAV export by decoding the original recording and writing PCM WAV locally
 - Basic browser-side pitch estimation (median frequency, nearest note, approximate 10th–90th percentile note range and voiced-frame coverage)\n- Experimental vocal-energy rhythm/tempo estimate with a confidence indicator
-- PWA manifest and offline application shell
+- Local backing sketch rendered as a WAV mix with selectable demo styles (soft keys, gospel pulse, Afro-soul groove, Amapiano pulse) and optional manual BPM override; original vocal export remains separate\n- PWA manifest and offline application shell
 
 ## Important limitations
 This is a recording and early analysis foundation, **not yet a complete AI music generator**.
 - Pitch estimation is a lightweight autocorrelation experiment; it can be affected by noise, vibrato, harmonics and polyphonic/background sound. It is not a reliable transcription or key detector.
 - Tempo estimation is now experimental and based on vocal-energy peaks; it can mistake syllables or noise for beats and should not be treated as a reliable metronome or tempo detector.
-- AI instrumental composition, intelligent vocal-to-band synchronisation, optional harmonies, professional mixing/mastering and finished-song generation are not connected. The local backing sketch is a simple synthetic demo, not an AI arrangement.
+- AI instrumental composition, intelligent vocal-to-band synchronisation, optional harmonies, professional mixing/mastering and finished-song generation are not connected. The local backing sketch is a simple synthetic demo, not an AI arrangement. Its style choices and manual BPM control alter the basic oscillator pattern; they are not full instrument samples.
 - MP3 encoding is not included. Original browser recording is kept in its browser-supported format; WAV export is generated locally.
 - IndexedDB recordings are stored only in the current browser profile on this device. Clearing browser site data can delete them. Download backups you want to keep.
 
