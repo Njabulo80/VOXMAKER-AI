@@ -12,7 +12,42 @@ function animate(){if(!analyser)return;const a=new Uint8Array(analyser.fftSize);
 function stopVisual(){cancelAnimationFrame(raf);if(ctx){ctx.close().catch(()=>{});ctx=null}analyser=null}
 function note(hz){if(!hz)return'—';const n=Math.round(69+12*Math.log2(hz/440)),names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];return names[(n%12+12)%12]+(Math.floor(n/12)-1)}
 function pitch(frame,sr){let energy=0;for(let i=0;i<frame.length;i++)energy+=frame[i]*frame[i];if(Math.sqrt(energy/frame.length)<.012)return null;let best=0,score=0;for(let lag=Math.floor(sr/1000);lag<=Math.min(Math.floor(sr/65),frame.length/2);lag++){let sum=0,n=frame.length-lag;for(let i=0;i<n;i++)sum+=frame[i]*frame[i+lag];sum/=n;if(sum>score){score=sum;best=lag}}const hz=sr/best;return best&&score>.35&&hz>=65&&hz<=1000?hz:null}
-async function analyse(blob){$('analysisStatus').textContent='Analysing locally…';try{const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Audio analysis is not supported here.');const c=new C(),a=await c.decodeAudioData(await blob.arrayBuffer()),d=a.getChannelData(0),frame=Math.floor(a.sampleRate*.04),hop=Math.floor(a.sampleRate*.02),p=[];for(let i=0;i+frame<d.length;i+=hop){const hz=pitch(d.slice(i,i+frame),a.sampleRate);if(hz)p.push(hz)}await c.close();if(!p.length){$('pitchValue').textContent='Not detected';$('noteValue').textContent='—';$('rangeValue').textContent='—';$('framesValue').textContent='0';$('analysisStatus').textContent='No stable pitched section found. Try a sustained sung note or hum.';return null}const s=[...p].sort((x,y)=>x-y),mid=s[Math.floor(s.length/2)],lo=s[Math.floor(s.length*.1)],hi=s[Math.floor(s.length*.9)],result={medianHz:Math.round(mid*10)/10,medianNote:note(mid),lowNote:note(lo),highNote:note(hi),voicedFrames:p.length};$('pitchValue').textContent=Math.round(mid)+' Hz';$('noteValue').textContent=result.medianNote;$('rangeValue').textContent=result.lowNote+' – '+result.highNote;$('framesValue').textContent=String(p.length);$('analysisStatus').textContent='Estimated from '+p.length+' voiced frames. Noise, vibrato and harmonics can affect results.';return result}catch(e){$('analysisStatus').textContent=e.message;return null}}
+function estimateTempo(samples, sampleRate){
+ const step=Math.max(1,Math.floor(sampleRate*.02)), envelope=[];
+ for(let i=0;i+step<samples.length;i+=step){let sum=0;for(let j=0;j<step;j++)sum+=samples[i+j]*samples[i+j];envelope.push(Math.sqrt(sum/step))}
+ if(envelope.length<100)return {bpm:null,confidence:0};
+ const sorted=[...envelope].sort((a,b)=>a-b),floor=sorted[Math.floor(sorted.length*.5)],peak=sorted[Math.floor(sorted.length*.85)];
+ const threshold=floor+(peak-floor)*.38, peaks=[], refractory=8;
+ for(let i=2;i<envelope.length-2;i++){
+  if(envelope[i]>threshold&&envelope[i]>=envelope[i-1]&&envelope[i]>envelope[i+1]&&(!peaks.length||i-peaks[peaks.length-1]>=refractory))peaks.push(i);
+ }
+ const intervals=[];for(let i=1;i<peaks.length;i++){const ms=(peaks[i]-peaks[i-1])*20;if(ms>=333&&ms<=1500)intervals.push(ms)}
+ if(intervals.length<3)return {bpm:null,confidence:0};
+ const s=[...intervals].sort((a,b)=>a-b),med=s[Math.floor(s.length/2)],bpm=Math.round(60000/med);
+ const deviations=intervals.map(x=>Math.abs(x-med)/med),consistency=1-Math.min(1,deviations.reduce((a,b)=>a+b,0)/deviations.length);
+ const confidence=Math.round(Math.min(1,intervals.length/10)*consistency*100);
+ return bpm>=40&&bpm<=200?{bpm,confidence}:{bpm:null,confidence:0};
+}
+async function analyse(blob){
+ $('analysisStatus').textContent='Analysing melody and rhythm locally…';
+ try{
+  const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Audio analysis is not supported here.');
+  const c=new C(),a=await c.decodeAudioData(await blob.arrayBuffer()),d=a.getChannelData(0),frame=Math.floor(a.sampleRate*.04),hop=Math.floor(a.sampleRate*.02),p=[];
+  for(let i=0;i+frame<d.length;i+=hop){const hz=pitch(d.slice(i,i+frame),a.sampleRate);if(hz)p.push(hz)}
+  const tempo=estimateTempo(d,a.sampleRate),coverage=Math.round(p.length/Math.max(1,Math.floor((d.length-frame)/hop))*100);
+  await c.close();
+  if(!p.length){
+   $('pitchValue').textContent='Not detected';$('noteValue').textContent='—';$('rangeValue').textContent='—';$('framesValue').textContent='0';$('tempoValue').textContent=tempo.bpm?tempo.bpm+' BPM':'Not clear';$('confidenceValue').textContent='Low';
+   $('analysisStatus').textContent='No stable pitched section found. Try a sustained sung note or hum.';return null
+  }
+  const s=[...p].sort((x,y)=>x-y),mid=s[Math.floor(s.length/2)],lo=s[Math.floor(s.length*.1)],hi=s[Math.floor(s.length*.9)];
+  const result={medianHz:Math.round(mid*10)/10,medianNote:note(mid),lowNote:note(lo),highNote:note(hi),voicedFrames:p.length,pitchCoverage:coverage,estimatedTempo:tempo.bpm,tempoConfidence:tempo.confidence};
+  $('pitchValue').textContent=Math.round(mid)+' Hz';$('noteValue').textContent=result.medianNote;$('rangeValue').textContent=result.lowNote+' – '+result.highNote;$('framesValue').textContent=String(p.length);
+  $('tempoValue').textContent=tempo.bpm?tempo.bpm+' BPM':'Not clear';$('confidenceValue').textContent=coverage+'% voiced';
+  $('analysisStatus').textContent='Pitch and rhythm estimates are experimental. Tempo follows vocal energy peaks and may not match the intended beat.';
+  return result
+ }catch(e){$('analysisStatus').textContent=e.message;return null}
+}
 function setPlayback(blob){if(playUrl)URL.revokeObjectURL(playUrl);playUrl=URL.createObjectURL(blob);$('playback').src=playUrl;$('playback').hidden=false;lastBlob=blob;$('wavBtn').disabled=false;$('download').href=playUrl;$('download').download=slug($('songTitle').value)+(blob.type.includes('mp4')?'.m4a':'.webm');$('download').hidden=false;$('download').textContent='Download original recording'}
 function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
 async function wav(blob,name){try{$('recordStatus').textContent='Preparing WAV export…';const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('WAV conversion is unavailable.');const c=new C(),a=await c.decodeAudioData(await blob.arrayBuffer()),channels=Math.min(2,a.numberOfChannels),len=a.length,rate=a.sampleRate,size=44+len*channels*2,b=new ArrayBuffer(size),v=new DataView(b),write=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};write(0,'RIFF');v.setUint32(4,size-8,true);write(8,'WAVE');write(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,channels,true);v.setUint32(24,rate,true);v.setUint32(28,rate*channels*2,true);v.setUint16(32,channels*2,true);v.setUint16(34,16,true);write(36,'data');v.setUint32(40,len*channels*2,true);const ch=Array.from({length:channels},(_,i)=>a.getChannelData(i));let o=44;for(let i=0;i<len;i++)for(let k=0;k<channels;k++){const x=Math.max(-1,Math.min(1,ch[k][i]));v.setInt16(o,x<0?x*32768:x*32767,true);o+=2}await c.close();download(new Blob([b],{type:'audio/wav'}),name);$('recordStatus').textContent='WAV export ready.'}catch(e){$('recordStatus').textContent=e.message||'WAV export failed; original audio remains available.'}}
