@@ -18,7 +18,7 @@ An Android-first, installable music studio built around preserving the singer's 
 This is a recording and early analysis foundation, **not yet a complete AI music generator**.
 - Pitch estimation is a lightweight autocorrelation experiment; it can be affected by noise, vibrato, harmonics and polyphonic/background sound. It is not a reliable transcription or key detector.
 - Tempo estimation is now experimental and based on vocal-energy peaks; it can mistake syllables or noise for beats and should not be treated as a reliable metronome or tempo detector.
-- AI instrumental composition, vocal-to-band synchronisation, optional harmonies, mixing/mastering and finished-song generation are not connected.
+- AI instrumental composition, intelligent vocal-to-band synchronisation, optional harmonies, professional mixing/mastering and finished-song generation are not connected. The local backing sketch is a simple synthetic demo, not an AI arrangement.
 - MP3 encoding is not included. Original browser recording is kept in its browser-supported format; WAV export is generated locally.
 - IndexedDB recordings are stored only in the current browser profile on this device. Clearing browser site data can delete them. Download backups you want to keep.
 
@@ -35,7 +35,7 @@ Serve the repository over HTTPS or localhost, then open it in a modern Android b
 ## Next milestones
 1. Improve melody, timing and tempo analysis with confidence reporting.
 2. Evaluate affordable/licensed AI instrumental generation that accepts or follows a reference vocal.
-3. Arrange instruments around the untouched original vocal and synchronise the backing.
+3. Improve backing generation and arrangement controls, then evaluate vocal-aware synchronisation around the untouched original vocal.
 4. Add optional harmony layers and local/export mixing controls.
 5. Validate Android performance and prepare a tested APK workflow.
 
