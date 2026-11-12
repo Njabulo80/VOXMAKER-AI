@@ -11,7 +11,7 @@ function draw(data){const c=$('waveform'),g=c.getContext('2d'),w=c.width=Math.ma
 function animate(){if(!analyser)return;const a=new Uint8Array(analyser.fftSize);analyser.getByteTimeDomainData(a);draw(Array.from(a,v=>(v-128)/128));raf=requestAnimationFrame(animate)}
 function stopVisual(){cancelAnimationFrame(raf);if(ctx){ctx.close().catch(()=>{});ctx=null}analyser=null}
 function note(hz){if(!hz)return'—';const n=Math.round(69+12*Math.log2(hz/440)),names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];return names[(n%12+12)%12]+(Math.floor(n/12)-1)}
-function pitch(frame,sr){let energy=0;for(let i=0;i<frame.length;i++)energy+=frame[i]*frame[i];if(Math.sqrt(energy/frame.length)<.012)return null;let best=0,score=0;for(let lag=Math.floor(sr/1000);lag<=Math.min(Math.floor(sr/65),frame.length/2);lag++){let sum=0,n=frame.length-lag;for(let i=0;i<n;i++)sum+=frame[i]*frame[i+lag];sum/=n;if(sum>score){score=sum;best=lag}}const hz=sr/best;return best&&score>.35&&hz>=65&&hz<=1000?hz:null}
+function pitch(frame,sr){const stride=4,nSamples=Math.floor(frame.length/stride),rate=sr/stride;let energy=0;for(let i=0;i<nSamples;i++){const x=frame[i*stride];energy+=x*x}if(Math.sqrt(energy/nSamples)<.012)return null;let best=0,score=0;for(let lag=Math.floor(rate/1000);lag<=Math.min(Math.floor(rate/65),nSamples/2);lag++){let sum=0,n=nSamples-lag;for(let i=0;i<n;i++)sum+=frame[i*stride]*frame[(i+lag)*stride];sum/=n;if(sum>score){score=sum;best=lag}}const hz=rate/best;return best&&score>.35&&hz>=65&&hz<=1000?hz:null}
 function estimateTempo(samples, sampleRate){
  const step=Math.max(1,Math.floor(sampleRate*.02)), envelope=[];
  for(let i=0;i+step<samples.length;i+=step){let sum=0;for(let j=0;j<step;j++)sum+=samples[i+j]*samples[i+j];envelope.push(Math.sqrt(sum/step))}
@@ -32,7 +32,7 @@ async function analyse(blob){
  $('analysisStatus').textContent='Analysing melody and rhythm locally…';
  try{
   const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Audio analysis is not supported here.');
-  const c=new C(),a=await c.decodeAudioData(await blob.arrayBuffer()),d=a.getChannelData(0),frame=Math.floor(a.sampleRate*.04),hop=Math.floor(a.sampleRate*.02),p=[];
+  const c=new C(),a=await c.decodeAudioData(await blob.arrayBuffer()),d=a.getChannelData(0),frame=Math.floor(a.sampleRate*.04),hop=Math.floor(a.sampleRate*.08),p=[];
   for(let i=0;i+frame<d.length;i+=hop){const hz=pitch(d.slice(i,i+frame),a.sampleRate);if(hz)p.push(hz)}
   const tempo=estimateTempo(d,a.sampleRate),coverage=Math.round(p.length/Math.max(1,Math.floor((d.length-frame)/hop))*100);
   await c.close();
