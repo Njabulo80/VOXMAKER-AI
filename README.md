@@ -11,8 +11,10 @@ An Android-first, installable music studio built around preserving the singer's 
 - Multiple vocal takes saved locally in IndexedDB on the device/browser
 - Playback and download of the original recorded audio
 - WAV export by decoding the original recording and writing PCM WAV locally
-- Basic browser-side pitch estimation (median frequency, nearest note, approximate 10th–90th percentile note range and voiced-frame coverage)\n- Experimental vocal-energy rhythm/tempo estimate with a confidence indicator
-- Local backing sketch rendered as a WAV mix with selectable demo styles (soft keys, gospel pulse, Afro-soul groove, Amapiano pulse) and optional manual BPM override; original vocal export remains separate\n- PWA manifest and offline application shell
+- Basic browser-side pitch estimation (median frequency, nearest note, approximate 10th–90th percentile note range and voiced-frame coverage)
+- Experimental vocal-energy rhythm/tempo estimate with a confidence indicator
+- Local backing sketch rendered as a WAV mix with selectable demo styles (soft keys, gospel pulse, Afro-soul groove, Amapiano pulse) and optional manual BPM override; original vocal export remains separate
+- PWA manifest and offline application shell
 
 ## Important limitations
 This is a recording and early analysis foundation, **not yet a complete AI music generator**.
