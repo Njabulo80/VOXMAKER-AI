@@ -82,7 +82,7 @@ async function buildBacking(){
    addTone(out,freq(36+root+chord[0]),start,Math.min(beat*1.8,duration-start),.075,'sine');
    for(let b=0;b<4;b++){const t=start+b*beat;if(t>=duration)break;if(b===0||b===2)addTone(out,55,t,.12,.12,'sine');else addTone(out,180,t,.09,.035,'triangle');for(let e=0;e<2;e++){const ht=t+e*beat/2;if(ht<duration)addTone(out,7000,ht,.025,.009,'square')}}
   }
-  const rendered=await out.startRendering(),blob=writeWav(rendered);setPlayback(blob);download(blob,slug($('songTitle').value)+'-backing-sketch.wav');$('recordStatus').textContent='Backing sketch rendered and mixed with your original vocal. This is a simple local demo arrangement, not AI-generated instruments.';$('wavBtn').disabled=false;
+  const rendered=await out.startRendering(),blob=writeWav(rendered),originalVoice=lastBlob;setPlayback(blob);lastBlob=originalVoice;download(blob,slug($('songTitle').value)+'-backing-sketch.wav');$('recordStatus').textContent='Backing sketch rendered and mixed with your original vocal. This is a simple local demo arrangement, not AI-generated instruments.';$('wavBtn').disabled=false;
  }catch(e){$('recordStatus').textContent='Could not build backing sketch: '+e.message}
  finally{button.disabled=false}
 }
