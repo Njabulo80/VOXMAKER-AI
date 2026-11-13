@@ -4,7 +4,8 @@
   "private": true,
   "description": "VOXMAKER AI mobile vocal studio",
   "scripts": {
-    "android:sync": "cap sync android"
+    "android:sync": "cap sync android",
+    "test": "node --test audio-analysis.test.js"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",

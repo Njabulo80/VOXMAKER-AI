@@ -1,55 +1,65 @@
 'use strict';
 const $=id=>document.getElementById(id);
-const DB='voxmaker-local',STORE='takes';let db,recorder,stream,chunks=[],started=0,clock,playUrl=null,backingUrl=null,lastBlob=null,lastAnalysis=null,ctx=null,analyser=null,raf=0;
+const DB='voxmaker-local',STORE='takes';let db,recorder,stream,chunks=[],started=0,clock,playUrl=null,backingUrl=null,lastBlob=null,lastAnalysis=null,ctx=null,analyser=null,raf=0,activeTakeId=null;
 const fmt=ms=>{const s=Math.floor(ms/1000);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
 const slug=s=>(s||'untitled-song').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60)||'untitled-song';
 function openDB(){return new Promise((ok,no)=>{const q=indexedDB.open(DB,1);q.onupgradeneeded=()=>{if(!q.result.objectStoreNames.contains(STORE)){const st=q.result.createObjectStore(STORE,{keyPath:'id'});st.createIndex('createdAt','createdAt')}};q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})}
 function saveTake(t){return new Promise((ok,no)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(t);tx.oncomplete=ok;tx.onerror=()=>no(tx.error)})}
 function allTakes(){return new Promise((ok,no)=>{const q=db.transaction(STORE).objectStore(STORE).getAll();q.onsuccess=()=>ok(q.result.sort((a,b)=>b.createdAt-a.createdAt));q.onerror=()=>no(q.error)})}
+function getTake(id){return new Promise((ok,no)=>{const q=db.transaction(STORE).objectStore(STORE).get(id);q.onsuccess=()=>ok(q.result||null);q.onerror=()=>no(q.error)})}
 function removeTake(id){return new Promise((ok,no)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=ok;tx.onerror=()=>no(tx.error)})}
-function draw(data){const c=$('waveform'),g=c.getContext('2d'),w=c.width=Math.max(320,c.clientWidth*devicePixelRatio),h=c.height=100;g.clearRect(0,0,w,h);g.strokeStyle='#5ce1bd';g.lineWidth=2;g.beginPath();for(let x=0;x<w;x++){const y=h/2+(data[Math.floor(x/w*data.length)]||0)*h*.43;x?g.lineTo(x,y):g.moveTo(x,y)}g.stroke();g.strokeStyle='#293750';g.beginPath();g.moveTo(0,h/2);g.lineTo(w,h/2);g.stroke()}
-function animate(){if(!analyser)return;const a=new Uint8Array(analyser.fftSize);analyser.getByteTimeDomainData(a);draw(Array.from(a,v=>(v-128)/128));raf=requestAnimationFrame(animate)}
-function stopVisual(){cancelAnimationFrame(raf);if(ctx){ctx.close().catch(()=>{});ctx=null}analyser=null}
-function note(hz){if(!hz)return'—';const n=Math.round(69+12*Math.log2(hz/440)),names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];return names[(n%12+12)%12]+(Math.floor(n/12)-1)}
-function pitch(frame,sr){const stride=4,nSamples=Math.floor(frame.length/stride),rate=sr/stride;let energy=0;for(let i=0;i<nSamples;i++){const x=frame[i*stride];energy+=x*x}if(Math.sqrt(energy/nSamples)<.012)return null;let best=0,score=0;for(let lag=Math.floor(rate/1000);lag<=Math.min(Math.floor(rate/65),nSamples/2);lag++){let sum=0,n=nSamples-lag;for(let i=0;i<n;i++)sum+=frame[i*stride]*frame[(i+lag)*stride];sum/=n;if(sum>score){score=sum;best=lag}}const hz=rate/best;return best&&score>.35&&hz>=65&&hz<=1000?hz:null}
-function estimateTempo(samples, sampleRate){
- const step=Math.max(1,Math.floor(sampleRate*.02)), envelope=[];
- for(let i=0;i+step<samples.length;i+=step){let sum=0;for(let j=0;j<step;j++)sum+=samples[i+j]*samples[i+j];envelope.push(Math.sqrt(sum/step))}
- if(envelope.length<100)return {bpm:null,confidence:0};
- const sorted=[...envelope].sort((a,b)=>a-b),floor=sorted[Math.floor(sorted.length*.5)],peak=sorted[Math.floor(sorted.length*.85)];
- const threshold=floor+(peak-floor)*.38, peaks=[], refractory=8;
- for(let i=2;i<envelope.length-2;i++){
-  if(envelope[i]>threshold&&envelope[i]>=envelope[i-1]&&envelope[i]>envelope[i+1]&&(!peaks.length||i-peaks[peaks.length-1]>=refractory))peaks.push(i);
+function draw(data){
+ const c=$('waveform'),g=c.getContext('2d'),ratio=window.devicePixelRatio||1,w=c.width=Math.max(320,Math.floor(c.clientWidth*ratio)),h=c.height=Math.floor(100*ratio),mid=h/2,amp=h*.43;
+ g.clearRect(0,0,w,h);g.strokeStyle='#5ce1bd';g.lineWidth=Math.max(1,ratio);g.beginPath();
+ for(let x=0;x<w;x++){
+  const start=Math.floor(x/w*data.length),end=Math.max(start+1,Math.floor((x+1)/w*data.length));let low=0,high=0;
+  for(let i=start;i<end&&i<data.length;i++){const value=data instanceof Uint8Array?(data[i]-128)/128:(data[i]||0);if(value<low)low=value;if(value>high)high=value}
+  g.moveTo(x,mid+low*amp);g.lineTo(x,mid+high*amp);
  }
- const intervals=[];for(let i=1;i<peaks.length;i++){const ms=(peaks[i]-peaks[i-1])*20;if(ms>=333&&ms<=1500)intervals.push(ms)}
- if(intervals.length<3)return {bpm:null,confidence:0};
- const s=[...intervals].sort((a,b)=>a-b),med=s[Math.floor(s.length/2)],bpm=Math.round(60000/med);
- const deviations=intervals.map(x=>Math.abs(x-med)/med),consistency=1-Math.min(1,deviations.reduce((a,b)=>a+b,0)/deviations.length);
- const confidence=Math.round(Math.min(1,intervals.length/10)*consistency*100);
- return bpm>=40&&bpm<=200?{bpm,confidence}:{bpm:null,confidence:0};
+ g.stroke();g.strokeStyle='#293750';g.beginPath();g.moveTo(0,mid);g.lineTo(w,mid);g.stroke();
+}
+function animate(){if(!analyser)return;const a=new Uint8Array(analyser.fftSize);analyser.getByteTimeDomainData(a);draw(a);raf=requestAnimationFrame(animate)}
+function stopVisual(){cancelAnimationFrame(raf);if(ctx){ctx.close().catch(()=>{});ctx=null}analyser=null}
+function drawContour(result,duration){
+ const canvas=$('melodyContour');if(!canvas)return;
+ const ratio=window.devicePixelRatio||1,w=Math.max(320,Math.floor(canvas.clientWidth*ratio)),h=Math.floor(132*ratio),g=canvas.getContext('2d');
+ canvas.width=w;canvas.height=h;g.clearRect(0,0,w,h);
+ const notes=result&&Array.isArray(result.melodyNotes)?result.melodyNotes:[];
+ const left=42*ratio,right=10*ratio,top=10*ratio,bottom=22*ratio,plotW=w-left-right,plotH=h-top-bottom;
+ g.font=(10*ratio)+'px Manrope, sans-serif';g.textBaseline='middle';
+ if(!notes.length){g.strokeStyle='#293750';g.beginPath();g.moveTo(left,h/2);g.lineTo(w-right,h/2);g.stroke();$('contourStatus').textContent='No stable note contour detected. The recording and timed backing remain available.';return}
+ const low=notes.reduce((v,n)=>Math.min(v,n.midi),Infinity)-2,high=notes.reduce((v,n)=>Math.max(v,n.midi),-Infinity)+2,span=Math.max(4,high-low),total=Math.max(.1,duration||notes[notes.length-1].time+notes[notes.length-1].duration);
+ for(let midi=Math.ceil(low/2)*2;midi<=high;midi+=2){
+  const y=top+(high-midi)/span*plotH;g.strokeStyle='#293750';g.lineWidth=ratio;g.beginPath();g.moveTo(left,y);g.lineTo(w-right,y);g.stroke();g.fillStyle='#9ba9bd';const label=window.VOXAudioAnalysis&&window.VOXAudioAnalysis.midiToNote?window.VOXAudioAnalysis.midiToNote(midi):String(midi);g.fillText(label,3*ratio,y);
+ }
+ g.strokeStyle='#5ce1bd';g.lineWidth=2*ratio;g.beginPath();
+ notes.forEach((item,index)=>{const x=left+Math.min(1,item.time/total)*plotW,y=top+(high-item.midi)/span*plotH;if(index===0)g.moveTo(x,y);else g.lineTo(x,y)});g.stroke();
+ notes.forEach(item=>{const x=left+Math.min(1,item.time/total)*plotW,y=top+(high-item.midi)/span*plotH;g.fillStyle='#5ce1bd';g.beginPath();g.arc(x,y,2.5*ratio,0,Math.PI*2);g.fill()});
+ g.fillStyle='#9ba9bd';g.fillText('0s',left,h-8*ratio);g.fillText(Math.round(total)+'s',w-right-25*ratio,h-8*ratio);
+ $('contourStatus').textContent=notes.length+' stable note events · approximate pitch contour across '+Math.round(total)+' seconds. Use as a guide, not sheet music.';
+}
+function showAnalysis(result,duration){
+ if(!result){$('pitchValue').textContent='Unavailable';$('noteValue').textContent='—';$('rangeValue').textContent='—';$('framesValue').textContent='—';$('tempoValue').textContent='—';$('confidenceValue').textContent='—';$('qualityValue').textContent='—';drawContour(null,duration);return}
+ const hasPitch=Number.isFinite(result.medianHz);
+ $('pitchValue').textContent=hasPitch?Math.round(result.medianHz)+' Hz':'Not detected';
+ $('noteValue').textContent=result.medianNote||'—';$('rangeValue').textContent=(result.lowNote||'—')+' – '+(result.highNote||'—');
+ $('framesValue').textContent=String(result.voicedFrames||0);$('tempoValue').textContent=result.estimatedTempo?result.estimatedTempo+' BPM':'Not clear';
+ $('confidenceValue').textContent=(Number.isFinite(result.pitchCoverage)?result.pitchCoverage:0)+'% voiced';
+ $('qualityValue').textContent=Number.isFinite(result.pitchConfidence)?result.pitchConfidence+'%':'—';
+ drawContour(result,duration);
+ $('analysisStatus').textContent=hasPitch?'Experimental YIN-style pitch tracking · '+(result.melodyNotes||[]).length+' stable note events · tempo is based on vocal-energy peaks and may not match the intended beat.':'No stable pitched section found. You can still build a timed soft-piano backing; choose a key or use the default.';
 }
 async function analyse(blob){
- lastAnalysis=null;$('arrangeBtn').disabled=false;
- $('analysisStatus').textContent='Analysing melody and rhythm locally…';
+ lastAnalysis=null;$('arrangeBtn').disabled=false;$('analysisStatus').textContent='Analysing melody and rhythm locally…';
+ const C=window.AudioContext||window.webkitAudioContext;
+ if(!C||!window.VOXAudioAnalysis){$('analysisStatus').textContent='Advanced pitch analysis is unavailable in this browser. Your take is still saved; backing can use a manual key and tempo.';drawContour(null,0);return null}
+ let audioContext=null;
  try{
-  const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Audio analysis is not supported here.');
-  const c=new C(),a=await c.decodeAudioData(await blob.arrayBuffer()),d=a.getChannelData(0),frame=Math.floor(a.sampleRate*.04),hop=Math.floor(a.sampleRate*.08),p=[];
-  for(let i=0;i+frame<d.length;i+=hop){const hz=pitch(d.slice(i,i+frame),a.sampleRate);if(hz)p.push({time:i/a.sampleRate,hz,midi:Math.round(69+12*Math.log2(hz/440))})}
-  const tempo=estimateTempo(d,a.sampleRate),coverage=Math.round(p.length/Math.max(1,Math.floor((d.length-frame)/hop))*100);
-  await c.close();
-  if(!p.length){
-   $('pitchValue').textContent='Not detected';$('noteValue').textContent='—';$('rangeValue').textContent='—';$('framesValue').textContent='0';$('tempoValue').textContent=tempo.bpm?tempo.bpm+' BPM':'Not clear';$('confidenceValue').textContent='Low';
-   $('analysisStatus').textContent='No stable pitched section found. You can still create a timed soft-piano backing; choose a key or use the default.';return null
-  }
-  const hzValues=p.map(x=>x.hz).sort((x,y)=>x-y),mid=hzValues[Math.floor(hzValues.length/2)],lo=hzValues[Math.floor(hzValues.length*.1)],hi=hzValues[Math.floor(hzValues.length*.9)];
-  const melodyNotes=[];let group=null;for(const framePoint of p){if(!group||Math.abs(framePoint.midi-group.midi)>1||framePoint.time-group.lastTime>.19){if(group&&group.frames>=2)melodyNotes.push({time:group.start,duration:Math.max(.12,group.lastTime-group.start+.08),midi:group.midi});group={midi:framePoint.midi,start:framePoint.time,lastTime:framePoint.time,frames:1}}else{group.midi=Math.round((group.midi*group.frames+framePoint.midi)/(group.frames+1));group.lastTime=framePoint.time;group.frames++}}if(group&&group.frames>=2)melodyNotes.push({time:group.start,duration:Math.max(.12,group.lastTime-group.start+.08),midi:group.midi});
-  const result={medianHz:Math.round(mid*10)/10,medianNote:note(mid),lowNote:note(lo),highNote:note(hi),voicedFrames:p.length,pitchCoverage:coverage,estimatedTempo:tempo.bpm,tempoConfidence:tempo.confidence,melodyNotes};
-  lastAnalysis=result;$('arrangeBtn').disabled=false;
-  $('pitchValue').textContent=Math.round(mid)+' Hz';$('noteValue').textContent=result.medianNote;$('rangeValue').textContent=result.lowNote+' – '+result.highNote;$('framesValue').textContent=String(p.length);
-  $('tempoValue').textContent=tempo.bpm?tempo.bpm+' BPM':'Not clear';$('confidenceValue').textContent=coverage+'% voiced';
-  $('analysisStatus').textContent='Pitch and rhythm estimates are experimental. Tempo follows vocal energy peaks and may not match the intended beat.';
-  return result
- }catch(e){$('analysisStatus').textContent=e.message;return null}
+  audioContext=new C();const buffer=await audioContext.decodeAudioData(await blob.arrayBuffer()),samples=buffer.getChannelData(0);
+  draw(samples);const result=window.VOXAudioAnalysis.analyzeSamples(samples,buffer.sampleRate);
+  lastAnalysis=result;showAnalysis(result,buffer.duration);return result;
+ }catch(e){$('analysisStatus').textContent='Analysis could not finish: '+(e.message||'unsupported audio format')+'. Your original recording remains available.';drawContour(null,0);return null}
+ finally{if(audioContext)await audioContext.close().catch(()=>{})}
 }
 function setPlayback(blob){if(playUrl)URL.revokeObjectURL(playUrl);playUrl=URL.createObjectURL(blob);$('playback').src=playUrl;$('playback').hidden=false;lastBlob=blob;$('wavBtn').disabled=false;$('download').href=playUrl;$('download').download=slug($('songTitle').value)+(blob.type.includes('mp4')?'.m4a':'.webm');$('download').hidden=false;$('download').textContent='Download original recording'}
 function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
@@ -125,7 +135,45 @@ async function buildBacking(){
  finally{button.disabled=false}
 }
 
-async function library(){const list=await allTakes();$('takeCount').textContent=list.length+' TAKE'+(list.length===1?'':'S');const root=$('projectList');root.replaceChildren();if(!list.length){const p=document.createElement('p');p.className='empty';p.textContent='Your saved recordings will appear here.';root.append(p);return}for(const t of list){const card=document.createElement('article');card.className='take';const h=document.createElement('h3');h.textContent=t.title;const meta=document.createElement('div');meta.className='take-meta';meta.textContent=t.genre+' · '+fmt(t.durationMs)+' · '+new Date(t.createdAt).toLocaleString();card.append(h,meta);if(t.analysis){const p=document.createElement('p');p.className='take-meta';p.textContent='Pitch estimate: '+t.analysis.medianNote+' ('+t.analysis.medianHz+' Hz)';card.append(p)}const actions=document.createElement('div');actions.className='take-actions';const add=(label,cls,fn)=>{const b=document.createElement('button');b.textContent=label;b.className=cls;b.addEventListener('click',fn);actions.append(b)};add('Play','',()=>{setPlayback(t.blob);$('playback').play().catch(()=>{})});add('Download','secondary',()=>download(t.blob,slug(t.title)+(t.blob.type.includes('mp4')?'.m4a':'.webm')));add('WAV','secondary',()=>wav(t.blob,slug(t.title)+'.wav'));add('🗑 Delete take','danger',async()=>{if(confirm('Permanently delete “'+t.title+'” from this device? This cannot be undone.')){await removeTake(t.id);await library();$('recordStatus').textContent='Take deleted from this device.'}});card.append(actions);root.append(card)}}
+function playSavedTake(t){
+ if(playUrl)URL.revokeObjectURL(playUrl);playUrl=URL.createObjectURL(t.blob);$('playback').src=playUrl;$('playback').hidden=false;$('playback').play().catch(()=>{});
+}
+async function library(){
+ const list=await allTakes();$('takeCount').textContent=list.length+' TAKE'+(list.length===1?'':'S');const root=$('projectList');root.replaceChildren();
+ if(!list.length){const p=document.createElement('p');p.className='empty';p.textContent='Your saved recordings will appear here.';root.append(p);return}
+ for(const t of list){
+  const card=document.createElement('article');card.className='take';
+  const h=document.createElement('h3');h.textContent=t.title||'Untitled song';
+  const meta=document.createElement('div');meta.className='take-meta';meta.textContent=(t.genre||'Voice take')+' · '+fmt(t.durationMs)+' · '+new Date(t.createdAt).toLocaleString();card.append(h,meta);
+  if(t.idea){const idea=document.createElement('p');idea.className='take-meta';idea.textContent='Theme: '+t.idea;card.append(idea)}
+  if(t.analysis&&t.analysis.medianNote){const p=document.createElement('p');p.className='take-meta';p.textContent='Pitch estimate: '+t.analysis.medianNote+' · '+(t.analysis.melodyNotes?t.analysis.melodyNotes.length:0)+' note events'+(t.analysis.estimatedTempo?' · '+t.analysis.estimatedTempo+' BPM':'');card.append(p)}
+  const actions=document.createElement('div');actions.className='take-actions';
+  const add=(label,cls,fn)=>{const b=document.createElement('button');b.textContent=label;b.className=cls;b.addEventListener('click',fn);actions.append(b)};
+  add('Open in studio','secondary',()=>loadTake(t));
+  add('Play','',()=>playSavedTake(t));
+  add('Download','secondary',()=>download(t.blob,slug(t.title)+(t.blob.type.includes('mp4')?'.m4a':'.webm')));
+  add('WAV','secondary',()=>wav(t.blob,slug(t.title)+'.wav'));
+  add('🗑 Delete take','danger',async()=>{if(confirm('Permanently delete “'+t.title+'” from this device? This cannot be undone.')){await removeTake(t.id);if(activeTakeId===t.id){activeTakeId=null;$('saveProjectBtn').disabled=true}$('recordStatus').textContent='Take deleted from this device.';await library()}});
+  card.append(actions);root.append(card);
+ }
+}
+async function loadTake(t){
+ $('songTitle').value=t.title||'';$('genre').value=t.genre||$('genre').options[0].value;$('idea').value=t.idea||'';
+ activeTakeId=t.id;$('saveProjectBtn').disabled=false;setPlayback(t.blob);$('arrangeBtn').disabled=false;
+ $('recordStatus').textContent='Opening '+(t.title||'your take')+' in the studio…';
+ const savedAnalysis=t.analysis||null,fresh=await analyse(t.blob);
+ if(!fresh&&savedAnalysis){lastAnalysis=savedAnalysis;showAnalysis(savedAnalysis,(t.durationMs||0)/1000)}
+ $('recordStatus').textContent='Project opened. Your original vocal is loaded; regenerate the piano backing or save updated project details.';
+ const panel=$('recordPanel');if(panel&&panel.scrollIntoView)panel.scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function saveProjectDetails(){
+ if(!activeTakeId)return;
+ try{
+  const take=await getTake(activeTakeId);if(!take){activeTakeId=null;$('saveProjectBtn').disabled=true;$('recordStatus').textContent='This take is no longer in the local library.';return}
+  take.title=$('songTitle').value.trim()||'Untitled song';take.genre=$('genre').value;take.idea=$('idea').value.trim();take.analysis=lastAnalysis||take.analysis||null;
+  await saveTake(take);await library();$('recordStatus').textContent='Project details saved on this device. Your original vocal file was not changed.';
+ }catch(e){$('recordStatus').textContent='Could not save project details: '+e.message}
+}
 $('recordBtn').addEventListener('click',async()=>{
  if(recorder&&recorder.state==='recording')return;
  const button=$('recordBtn');button.disabled=true;$('recordStatus').textContent='Requesting microphone access…';
@@ -145,12 +193,12 @@ $('recordBtn').addEventListener('click',async()=>{
    clearInterval(clock);stopVisual();const blob=new Blob(chunks,{type:recorder.mimeType||'audio/webm'}),durationMs=Date.now()-started;
    stream?.getTracks().forEach(t=>t.stop());stream=null;setPlayback(blob);
    const take={id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8),title:$('songTitle').value.trim()||'Untitled song',genre:$('genre').value,idea:$('idea').value.trim(),createdAt:Date.now(),durationMs,blob,analysis:null};
-   try{take.analysis=await analyse(blob);await saveTake(take);await library();$('recordStatus').textContent='Take saved. Preparing your soft-piano accompaniment…';await buildBacking();}
-   catch(e){$('recordStatus').textContent='Your recording is captured. Backing or analysis needs attention: '+e.message+' Your original vocal remains available.'}
-   button.disabled=false;$('stopBtn').disabled=true;
+    try{take.analysis=await analyse(blob);await saveTake(take);activeTakeId=take.id;$('saveProjectBtn').disabled=false;await library();$('recordStatus').textContent='Take saved. Preparing your soft-piano accompaniment…';await buildBacking();}
+    catch(e){$('recordStatus').textContent='Your recording is captured. Backing or analysis needs attention: '+e.message+' Your original vocal remains available.'}
+    button.disabled=false;$('stopBtn').disabled=true;
   };
-  recorder.start(250);started=Date.now();$('timer').textContent='00:00';clock=setInterval(()=>$('timer').textContent=fmt(Date.now()-started),250);
-  $('stopBtn').disabled=false;$('wavBtn').disabled=true;$('arrangeBtn').disabled=true;$('backingDownload').hidden=true;$('recordStatus').textContent='Recording your original voice… sing or hum naturally.';
+  recorder.start(250);started=Date.now();activeTakeId=null;$('saveProjectBtn').disabled=true;lastAnalysis=null;drawContour(null,0);$('analysisStatus').textContent='Recording in progress. Your note contour will appear after you stop.';$('timer').textContent='00:00';clock=setInterval(()=>$('timer').textContent=fmt(Date.now()-started),250);
+   $('stopBtn').disabled=false;$('wavBtn').disabled=true;$('arrangeBtn').disabled=true;$('download').hidden=true;$('backingDownload').hidden=true;$('recordStatus').textContent='Recording your original voice… sing or hum naturally.';
  }catch(e){
   stopVisual();stream?.getTracks().forEach(t=>t.stop());stream=null;button.disabled=false;
   const messages={NotAllowedError:'Microphone permission was denied. Allow Microphone for VOXMAKER in the Android permission prompt or Settings, then tap Start again.',PermissionDeniedError:'Microphone permission was denied. Allow Microphone for VOXMAKER in Android Settings, then tap Start again.',NotFoundError:'No microphone was found. Check that your phone microphone is available.',NotReadableError:'Android could not open the microphone. Close other apps using the mic, then try again.',SecurityError:'Microphone access is blocked by this app environment. Open VOXMAKER through its installed app or HTTPS.',InsecureContextError:e.message,NotSupportedError:e.message,MediaRecorderUnavailable:e.message};
@@ -160,6 +208,7 @@ $('recordBtn').addEventListener('click',async()=>{
 $('stopBtn').addEventListener('click',()=>{if(recorder&&recorder.state!=='inactive')recorder.stop();clearInterval(clock);$('timer').textContent=fmt(Date.now()-started);$('stopBtn').disabled=true;$('recordStatus').textContent='Finishing and analysing your take…'});
 $('wavBtn').addEventListener('click',()=>{if(lastBlob)wav(lastBlob,slug($('songTitle').value)+'.wav')});
 $('arrangeBtn').addEventListener('click',buildBacking);
+$('saveProjectBtn').addEventListener('click',saveProjectDetails);
 window.addEventListener('beforeunload',()=>{if(playUrl)URL.revokeObjectURL(playUrl);if(backingUrl)URL.revokeObjectURL(backingUrl);stream?.getTracks().forEach(t=>t.stop());stopVisual()});
 (async()=>{try{db=await openDB();await library()}catch(e){$('recordStatus').textContent='Local project storage is unavailable. You can still record and download a copy.'}})();
 if('serviceWorker'in navigator&&location.protocol!=='file:')addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
