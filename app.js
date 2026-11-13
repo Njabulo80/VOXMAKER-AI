@@ -29,7 +29,7 @@ function estimateTempo(samples, sampleRate){
  return bpm>=40&&bpm<=200?{bpm,confidence}:{bpm:null,confidence:0};
 }
 async function analyse(blob){
- lastAnalysis=null;$('arrangeBtn').disabled=true;
+ lastAnalysis=null;$('arrangeBtn').disabled=false;
  $('analysisStatus').textContent='Analysing melody and rhythm locally…';
  try{
   const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Audio analysis is not supported here.');
@@ -39,7 +39,7 @@ async function analyse(blob){
   await c.close();
   if(!p.length){
    $('pitchValue').textContent='Not detected';$('noteValue').textContent='—';$('rangeValue').textContent='—';$('framesValue').textContent='0';$('tempoValue').textContent=tempo.bpm?tempo.bpm+' BPM':'Not clear';$('confidenceValue').textContent='Low';
-   $('analysisStatus').textContent='No stable pitched section found. Try a sustained sung note or hum.';return null
+   $('analysisStatus').textContent='No stable pitched section found. You can still create a timed soft-piano backing; choose a key or use the default.';return null
   }
   const s=[...p].sort((x,y)=>x-y),mid=s[Math.floor(s.length/2)],lo=s[Math.floor(s.length*.1)],hi=s[Math.floor(s.length*.9)];
   const result={medianHz:Math.round(mid*10)/10,medianNote:note(mid),lowNote:note(lo),highNote:note(hi),voicedFrames:p.length,pitchCoverage:coverage,estimatedTempo:tempo.bpm,tempoConfidence:tempo.confidence};
@@ -82,15 +82,14 @@ async function buildBacking(){
  try{
   const Offline=window.OfflineAudioContext||window.webkitOfflineAudioContext;if(!Offline)throw Error('Audio rendering is not supported in this browser.');
   const AC=window.AudioContext||window.webkitAudioContext,live=new AC(),voice=await live.decodeAudioData(await lastBlob.arrayBuffer());await live.close();
-  const manual=Number($('tempoOverride').value),bpm=manual>=40&&manual<=200?manual:(lastAnalysis&&lastAnalysis.estimatedTempo?lastAnalysis.estimatedTempo:76),beat=60/Math.max(40,Math.min(200,bpm)),style=$('backingStyle').value,duration=voice.duration,rate=voice.sampleRate,frames=Math.ceil(duration*rate),out=new Offline(2,frames,rate);
+  const manual=Number($('tempoOverride').value),bpm=manual>=40&&manual<=200?manual:(lastAnalysis&&lastAnalysis.estimatedTempo?lastAnalysis.estimatedTempo:76),beat=60/Math.max(40,Math.min(200,bpm)),style=$('mood').value,duration=voice.duration,rate=voice.sampleRate,frames=Math.ceil(duration*rate),out=new Offline(2,frames,rate);
   const vocalLevel=Number($('vocalLevel').value)/100,pianoLevel=Number($('pianoLevel').value)/100,padLevel=Number($('padLevel').value)/100,wet=Number($('reverbLevel').value)/100;
   const master=out.createGain();master.gain.value=1;master.connect(out.destination);
   const convolver=out.createConvolver(),impulseLength=Math.max(1,Math.floor(rate*2.8)),impulse=out.createBuffer(2,impulseLength,rate);
   for(let ch=0;ch<2;ch++){const data=impulse.getChannelData(ch);for(let i=0;i<impulseLength;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/impulseLength,2.8)}
   convolver.buffer=impulse;const wetGain=out.createGain();wetGain.gain.value=wet*.42;convolver.connect(wetGain);wetGain.connect(master);
-  const vocal=out.createBufferSource(),voiceGain=out.createGain(),voiceSend=out.createGain();vocal.buffer=voice;voiceGain.gain.value=vocalLevel;;vocal.connect(voiceGain);voiceGain.connect(master);voiceGain.connect(voiceSend);voiceSend.connect(convolver);vocal.start(0);
-  const midi=lastAnalysis&&lastAnalysis.medianHz?Math.round(69+12*Math.log2(lastAnalysis.medianHz/440)):60,root=midi%12,rootMidi=Number($('rootKey').value)>=0?Number($('rootKey').value):root;
-  const scale=style==='hopeful'?[0,2,4,7,9]:style==='reflective'?[0,2,3,7,9]:[0,2,4,5,7,9,11];
+  const vocal=out.createBufferSource(),voiceGain=out.createGain(),voiceSend=out.createGain();vocal.buffer=voice;voiceGain.gain.value=vocalLevel;vocal.connect(voiceGain);voiceGain.connect(master);voiceGain.connect(voiceSend);voiceSend.connect(convolver);vocal.start(0);
+  const midi=lastAnalysis&&lastAnalysis.medianHz?Math.round(69+12*Math.log2(lastAnalysis.medianHz/440)):60,root=((midi%12)+12)%12,rootMidi=Number($('rootKey').value)>=0?Number($('rootKey').value):root;
   const progressions={
    worship:[[0,4,7],[5,9,12],[7,11,14],[0,4,7]],
    reflective:[[0,3,7],[8,12,15],[5,9,12],[7,10,14]],
@@ -117,7 +116,7 @@ async function buildBacking(){
   }
   const rendered=await out.startRendering(),blob=writeWav(rendered);
   if(backingUrl)URL.revokeObjectURL(backingUrl);backingUrl=URL.createObjectURL(blob);$('playback').src=backingUrl;$('playback').hidden=false;$('backingDownload').href=backingUrl;$('backingDownload').download=slug($('songTitle').value)+'-spiritual-mix.wav';$('backingDownload').hidden=false;
-  $('recordStatus').textContent='Your '+$('mood').selectedOptions[0].text.toLowerCase()+' piano mix is ready · '+bpm+' BPM. Original vocal remains separately available.';
+  $('recordStatus').textContent='Your '+$('mood').selectedOptions[0].text.toLowerCase()+' piano mix is ready · '+bpm+' BPM. Both tracks start together at 0:00. Tap Play to hear the mix; your original vocal remains separate.';
  }catch(e){$('recordStatus').textContent='Could not build the piano mix: '+e.message}
  finally{button.disabled=false}
 }
@@ -142,8 +141,8 @@ $('recordBtn').addEventListener('click',async()=>{
    clearInterval(clock);stopVisual();const blob=new Blob(chunks,{type:recorder.mimeType||'audio/webm'}),durationMs=Date.now()-started;
    stream?.getTracks().forEach(t=>t.stop());stream=null;setPlayback(blob);
    const take={id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8),title:$('songTitle').value.trim()||'Untitled song',genre:$('genre').value,idea:$('idea').value.trim(),createdAt:Date.now(),durationMs,blob,analysis:null};
-   try{take.analysis=await analyse(blob);await saveTake(take);await library();$('recordStatus').textContent='Take saved on this device. Your original vocal was not uploaded or replaced.'}
-   catch(e){$('recordStatus').textContent='Recording captured, but saving or analysis failed: '+e.message+' Download a backup.'}
+   try{take.analysis=await analyse(blob);await saveTake(take);await library();$('recordStatus').textContent='Take saved. Preparing your soft-piano accompaniment…';await buildBacking();}
+   catch(e){$('recordStatus').textContent='Your recording is captured. Backing or analysis needs attention: '+e.message+' Your original vocal remains available.'}
    button.disabled=false;$('stopBtn').disabled=true;
   };
   recorder.start(250);started=Date.now();$('timer').textContent='00:00';clock=setInterval(()=>$('timer').textContent=fmt(Date.now()-started),250);
