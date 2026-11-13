@@ -46,6 +46,19 @@ jobs:
       - name: Generate Android project
         run: |
           npx cap add android
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text()
+          permissions = [
+              '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
+              '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />'
+          ]
+          for permission in permissions:
+              if permission not in text:
+                  text = text.replace('<application', permission + '\\n    <application', 1)
+          manifest.write_text(text)
+          PY
           npx cap sync android
 
       - name: Build debug APK
