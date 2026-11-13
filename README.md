@@ -13,14 +13,17 @@ An Android-first, installable music studio built around preserving the singer's 
 - WAV export by decoding the original recording and writing PCM WAV locally
 - Basic browser-side pitch estimation (median frequency, nearest note, approximate 10th–90th percentile note range and voiced-frame coverage)
 - Experimental vocal-energy rhythm/tempo estimate with a confidence indicator
-- Spiritual backing stage with peaceful worship, reflective and hopeful arrangements; soft piano-like notes, warm synthetic atmosphere, adjustable original-vocal/piano/pad levels and room reverb; optional manual BPM and piano-key selection; mixed WAV and untouched original-vocal exports remain separate
+- Soulful vocal-piano direction with intimate worship, tender and uplifting moods; synthetic piano-like accompaniment, warm atmosphere, adjustable vocal/piano/pad levels and room reverb; optional manual BPM and piano-key selection
+- Experimental note-contour following: detected vocal note events can trigger quiet piano harmony notes at their detected timestamps, alongside the chord bed
+- Per-take delete control in the saved library, with confirmation before local deletion
+- Mixed WAV and untouched original-vocal exports remain separate
 - PWA manifest and offline application shell
 
 ## Important limitations
 This is a recording and early analysis foundation, **not yet a complete AI music generator**.
 - Pitch estimation is a lightweight autocorrelation experiment; it can be affected by noise, vibrato, harmonics and polyphonic/background sound. It is not a reliable transcription or key detector.
 - Tempo estimation is now experimental and based on vocal-energy peaks; it can mistake syllables or noise for beats and should not be treated as a reliable metronome or tempo detector.
-- The spiritual backing stage is a locally rendered synthetic piano-like demo, not sampled acoustic piano or AI composition. The backing render is automatically triggered after a take is analysed and saved. The vocal and backing are rendered from the same zero-time origin and duration, so the preview mix is timeline-aligned. The chord progression follows a simple pitch estimate or selected key; it does not yet transcribe every sung note or adapt every chord to detailed vocal phrasing. Reverb is a simple generated room effect. AI instrumental composition, vocal-aware arrangement, optional harmony layers, professional mixing/mastering and finished-song generation are not connected.
+- The spiritual backing stage is a locally rendered synthetic piano-like demo, not sampled acoustic piano or AI composition. The backing render is automatically triggered after a take is analysed and saved. The vocal and backing are rendered from the same zero-time origin and duration. When the lightweight pitch detector finds stable notes, a quiet piano harmony line follows detected note events at their estimated timestamps. This is experimental note-contour following, not perfect transcription or guaranteed musical synchronization: unvoiced sections, vibrato, overlapping notes and pitch errors can cause missed or incorrect notes. The chord progression remains a fixed soulful progression based on a simple pitch estimate or selected key. Reverb is a simple generated room effect. AI instrumental composition, vocal-aware arrangement, optional harmony layers, professional mixing/mastering and finished-song generation are not connected.
 - MP3 encoding is not included. Original browser recording is kept in its browser-supported format; WAV export is generated locally.
 - IndexedDB recordings are stored only in the current browser profile on this device. Clearing browser site data can delete them. Download backups you want to keep.
 
@@ -38,7 +41,7 @@ Serve the repository over HTTPS or localhost, then open it in a modern Android b
 1. Improve melody, timing and tempo analysis with confidence reporting.
 2. Evaluate affordable/licensed AI instrumental generation that accepts or follows a reference vocal.
 3. Improve backing generation and arrangement controls, then evaluate vocal-aware synchronisation around the untouched original vocal.
-4. Add melody-following accompaniment, optional harmony layers and improved local/export mixing controls.
+4. Improve vocal note tracking, chord adaptation and phrase-aware accompaniment; add optional harmony layers and improved local/export mixing controls.
 5. Evaluate a consent-based talking-photo/lip-sync workflow; this requires a suitable external video-generation service and separate privacy, licensing and cost review.
 6. Validate Android performance, microphone permissions and APK installation on a real phone.
 
