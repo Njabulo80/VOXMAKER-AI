@@ -88,7 +88,7 @@ async function buildBacking(){
   const convolver=out.createConvolver(),impulseLength=Math.max(1,Math.floor(rate*2.8)),impulse=out.createBuffer(2,impulseLength,rate);
   for(let ch=0;ch<2;ch++){const data=impulse.getChannelData(ch);for(let i=0;i<impulseLength;i++)data[i]=(Math.random()*2-1)*Math.pow(1-i/impulseLength,2.8)}
   convolver.buffer=impulse;const wetGain=out.createGain();wetGain.gain.value=wet*.42;convolver.connect(wetGain);wetGain.connect(master);
-  const vocal=out.createBufferSource(),voiceGain=out.createGain(),voiceSend=out.createGain();vocal.buffer=voice;voiceGain.gain.value=vocalLevel;voice.connect?null:null;vocal.connect(voiceGain);voiceGain.connect(master);voiceGain.connect(voiceSend);voiceSend.connect(convolver);vocal.start(0);
+  const vocal=out.createBufferSource(),voiceGain=out.createGain(),voiceSend=out.createGain();vocal.buffer=voice;voiceGain.gain.value=vocalLevel;;vocal.connect(voiceGain);voiceGain.connect(master);voiceGain.connect(voiceSend);voiceSend.connect(convolver);vocal.start(0);
   const midi=lastAnalysis&&lastAnalysis.medianHz?Math.round(69+12*Math.log2(lastAnalysis.medianHz/440)):60,root=midi%12,rootMidi=Number($('rootKey').value)>=0?Number($('rootKey').value):root;
   const scale=style==='hopeful'?[0,2,4,7,9]:style==='reflective'?[0,2,3,7,9]:[0,2,4,5,7,9,11];
   const progressions={
